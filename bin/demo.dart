@@ -9,29 +9,12 @@ import 'dart:io';
 
 import 'package:kedaipos/app/pos_service.dart';
 import 'package:kedaipos/data/catalog_seed.dart';
+import 'package:kedaipos/data/io_gateway.dart';
 import 'package:kedaipos/data/store.dart';
 import 'package:kedaipos/domain/cart.dart';
 import 'package:kedaipos/domain/money.dart';
 import 'package:kedaipos/domain/receipt.dart';
 import 'package:kedaipos/domain/tax_engine.dart';
-
-/// Real file gateway for the CLI (the Flutter web build never sees this).
-class IoFileGateway implements FileGateway {
-  @override
-  Future<String?> read(String path) async {
-    final f = File(path);
-    return f.existsSync() ? await f.readAsString() : null;
-  }
-
-  @override
-  Future<void> write(String path, String content) async {
-    final f = File(path);
-    await f.parent.create(recursive: true);
-    // Write-then-rename would be the production pattern; single write is
-    // honest for a demo (see README limitations).
-    await f.writeAsString(content);
-  }
-}
 
 Future<void> main(List<String> args) async {
   final dir = Directory.systemTemp.createTempSync('kedaipos_demo');

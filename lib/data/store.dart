@@ -131,11 +131,14 @@ class JsonFileStore implements PosRepository {
   }
 
   Future<void> _write(PosState state) async {
-    _cache = state;
-    // Single write of the whole state = atomic enough for a single terminal
-    // (see README limitations). A production store would use a temp-file +
-    // rename dance or a real database transaction.
+    // One gateway.write per save: the gateway implementation is responsible
+    // for atomicity (IoFileGateway does temp-file + fsync + rename, see
+    // io_gateway.dart), so a failed write leaves the previous complete state
+    // on disk — a crash can never half-update the day's receipts. The cache
+    // is only swapped AFTER the write succeeds, so a failed write never
+    // leaves the in-memory view ahead of what is durably on disk.
     await gateway.write(path, jsonEncoder.convert(state.toJson()));
+    _cache = state;
   }
 
   @override

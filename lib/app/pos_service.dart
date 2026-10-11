@@ -58,15 +58,22 @@ class PosService {
     );
 
     // Persist receipt + counter state BEFORE committing the number: if the
-    // write throws, the number is not marked issued and will be re-issued.
+    // write throws, the number is rolled back (not marked issued) and will
+    // be re-issued — the failed attempt burns no number, so the persisted
+    // sequence stays gap-free.
     final state = await repo.loadState();
-    await repo.saveState(
-      state.copyWith(
-        receipts: [...state.receipts, receipt],
-        counters: numbering.counters,
-        issuedNumbers: {...numbering.issuedNumbers, number},
-      ),
-    );
+    try {
+      await repo.saveState(
+        state.copyWith(
+          receipts: [...state.receipts, receipt],
+          counters: numbering.counters,
+          issuedNumbers: {...numbering.issuedNumbers, number},
+        ),
+      );
+    } catch (_) {
+      numbering.rollback(number);
+      rethrow;
+    }
     numbering.commit(number);
     return receipt;
   }

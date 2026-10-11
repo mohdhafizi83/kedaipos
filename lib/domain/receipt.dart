@@ -163,6 +163,25 @@ class ReceiptNumberGenerator {
     }
   }
 
+  /// Undo a [next] whose receipt write failed, so the number is re-issued
+  /// on the next call instead of burning a gap. Only rolls back if the
+  /// counter still sits at exactly that sequence (defensive: never rewinds
+  /// past a number that was already committed).
+  void rollback(String number) {
+    final m = RegExp(r'^INV-(\d{8})-(\d{4})$').firstMatch(number);
+    if (m == null) return;
+    if (_issuedNumbers.contains(number)) return;
+    final key = m.group(1)!;
+    final seq = int.parse(m.group(2)!);
+    if (_counters[key] == seq) {
+      if (seq <= 1) {
+        _counters.remove(key);
+      } else {
+        _counters[key] = seq - 1;
+      }
+    }
+  }
+
   /// Build a generator restored from stored state.
   factory ReceiptNumberGenerator.restore({
     required Map<String, dynamic> json,
