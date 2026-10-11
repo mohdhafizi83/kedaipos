@@ -4,7 +4,7 @@
 
 An offline-first cashier POS for small Malaysian kedai (warung / cafe / mini-market) — built around the part most POS demos get wrong: **money**.
 
-Every ringgit value in this codebase is an exact integer count of sen. SST is computed on the discounted base (the correct order for Malaysian tax). Cash totals round to the nearest 5 sen the way cashiers actually do it. Receipt numbers are gap-free per day, survive restarts, and refuse replays. All of it is pure Dart, fully unit-tested (50 tests), with zero third-party dependencies.
+Every ringgit value in this codebase is an exact integer count of sen. SST is computed on the discounted base (the correct order for Malaysian tax). Cash totals round to the nearest 5 sen the way cashiers actually do it. Receipt numbers are gap-free per day, survive restarts, and refuse replays. State writes are atomic (temp + fsync + rename), so a power cut can never corrupt the day's receipts. All of it is pure Dart, fully unit-tested (63 tests), with zero third-party dependencies.
 
 ## Why most POS demos are toys
 
@@ -30,7 +30,7 @@ Every ringgit value in this codebase is an exact integer count of sen. SST is co
 
 **Gap-free sequence + replay safety.** `ReceiptNumberGenerator` keeps a per-day counter. The order of operations at checkout is: issue number → persist receipt + counter in one state write → commit the number. If the write fails, the number is not committed and gets re-issued — no gaps. A committed number can never be committed again (`DuplicateReceiptException`), and counters can be rebuilt from the receipts themselves if the counter state is ever lost.
 
-**JSON-file store is honest for one terminal.** `JsonFileStore` is pure Dart behind a `FileGateway` port (no `dart:io` import in `lib/`), so the same store code compiles for web and desktop and is trivially testable with a fake gateway. A single JSON file rewritten atomically is genuinely appropriate for a single-terminal warung setup. Multi-terminal would need per-terminal sequence partitions (or a DB sequence) and row-level transactions — that's exactly where Postgres slots in: implement `PosRepository` over Postgres, everything above `lib/data/` is unchanged.
+**JSON-file store is honest for one terminal.** `JsonFileStore` is pure Dart behind a `FileGateway` port (no `dart:io` import in `lib/`), so the same store code compiles for web and desktop and is trivially testable with a fake gateway. Writes go through `IoFileGateway`: temp file + fsync + atomic rename, so a crash mid-write can never leave a torn state file — the day's receipts are all-or-nothing. Multi-terminal would need per-terminal sequence partitions (or a DB sequence) and row-level transactions — that's exactly where Postgres slots in: implement `PosRepository` over Postgres, everything above `lib/data/` is unchanged.
 
 **Zero third-party dependencies.** `pubspec.yaml` depends only on the Flutter SDK. State management is `setState` + a plain `PosService` — appropriate at this size, and it keeps the domain layer importable by a CLI (`bin/demo.dart`) with no Flutter binding.
 
@@ -45,6 +45,7 @@ lib/
     receipt.dart       Receipt, ReceiptNumberGenerator, DayReport (Z-report)
   data/
     store.dart         PosRepository port + JsonFileStore (FileGateway-injected) + InMemoryStore
+    io_gateway.dart    dart:io gateway: temp file + fsync + atomic rename
     catalog_seed.dart  12 realistic MY items with per-item SST flags
   app/
     pos_service.dart   checkout orchestration (shared by UI and CLI demo)
@@ -103,18 +104,28 @@ The demo writes a real JSON state file to a temp dir, runs six orders (mixed SST
 
 ```bash
 flutter run -d chrome     # web
-flutter test              # 50 tests, no network
+flutter test              # 63 tests, no network
 ```
 
-## Tests (50, all offline)
+## Tests (63, all offline)
 
 - **Money** (18): parse/format edge cases, thousands separators, malformed input rejection, negative amounts, the `0.1 + 0.2` float trap, `multiplyRatio` half-up table, 5-sen rounding table for every sen digit 0–9 including exact halves.
 - **Cart + TaxEngine** (15): add/merge/setQuantity/remove invariants, discount clamping, SST mix (8% + 0% groups), discount-before-tax ordering (asserts 186 sen vs the wrong 207 sen), pro-rata allocation sums exactly, cash vs card rounding behaviour.
 - **Receipt + store** (11): format/padding, per-day rollover, peek non-consuming, replay rejection, JSON roundtrip restart, counter recovery from receipts, `total == lines − discount + tax + rounding` identity.
+- **Atomic writes** (5): crash injected between fsync and rename leaves the old file intact; failed checkout keeps the file valid and re-issues the number gap-free after restart; rollback never rewinds past a committed number.
+- **Input validation** (8): `Money.parse` rejects NaN/Infinity/hex junk and oversized values (int64 wraparound guard); quantity bounds on `CartLine`/`add`/`setQuantity` (runtime throws, release-safe); percent-discount range; negative flat-discount clamped to zero.
 - **Property-style** (2): 2 000 seeded-random carts — the receipt identity and 5-sen grid hold exactly on every one; SST drift vs ideal ≤ 1 sen per group.
 - **Widget** (4): tap product updates cart total, checkout navigates to receipt, day-close shows SST, discount button changes totals.
 
-CI runs `dart format --set-exit-if-changed`, `flutter analyze --fatal-infos`, `flutter test`, `flutter build web --release`, and executes the demo on every push (Flutter 3.47.7, ubuntu).
+CI runs `dart format --set-exit-if-changed`, `flutter analyze --fatal-infos`, `flutter test`, `flutter build web --release`, and executes the demo on every push (Flutter 3.47.7, ubuntu). All actions are SHA-pinned and a gitleaks job scans full history for secrets.
+
+## Security
+
+KedaiPOS is offline and single-terminal: no network, no auth, no API. The threat model is therefore **data integrity and crash safety**, not network attacks — see [SECURITY.md](SECURITY.md) for the honest scope. The short version:
+
+- **Atomic writes**: state is saved as temp file + fsync + atomic rename; a crash mid-write leaves the previous complete file, never a torn one.
+- **Gap-free survives crashes**: a failed receipt write rolls the invoice number back, so the persisted sequence has no gaps; committed numbers can never be re-committed.
+- **Domain-boundary validation**: quantities, discounts, and money parsing reject negative/NaN/oversized input with runtime throws (not release-stripped asserts), including an int64-wraparound guard in `Money.parse`.
 
 ## Honest limitations
 
