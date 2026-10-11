@@ -77,7 +77,13 @@ class Money implements Comparable<Money> {
     final intPart = match.group(1)!;
     final fracRaw = match.group(2) ?? '';
     final frac = fracRaw.padRight(2, '0');
-    // Reject values that would silently overflow.
+    // Reject values that would silently overflow. The digit-length check
+    // runs BEFORE the multiply: on the VM, `int.parse(huge) * 100` wraps
+    // around to a negative int64, and a negative result would sneak past a
+    // `sen > maxSen` check alone.
+    if (intPart.length > 15) {
+      throw MoneyParseException(input);
+    }
     final sen = int.parse(intPart) * 100 + int.parse(frac);
     if (sen > maxSen) {
       throw MoneyParseException(input);
