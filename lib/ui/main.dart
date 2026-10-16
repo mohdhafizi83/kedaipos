@@ -20,9 +20,17 @@ class KedaiPosApp extends StatelessWidget {
       title: 'KedaiPOS',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF006834)),
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF6366F1)),
         useMaterial3: true,
       ),
+      darkTheme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFF6366F1),
+          brightness: Brightness.dark,
+        ),
+        useMaterial3: true,
+      ),
+      themeMode: ThemeMode.system,
       home: const PosHomePage(),
     );
   }
