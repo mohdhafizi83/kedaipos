@@ -107,6 +107,8 @@ flutter run -d chrome     # web
 flutter test              # 63 tests, no network
 ```
 
+Full setup, APK install, and backup docs: [docs/getting-started.md](docs/getting-started.md).
+
 ## Tests (63, all offline)
 
 - **Money** (18): parse/format edge cases, thousands separators, malformed input rejection, negative amounts, the `0.1 + 0.2` float trap, `multiplyRatio` half-up table, 5-sen rounding table for every sen digit 0–9 including exact halves.
@@ -132,7 +134,10 @@ KedaiPOS is offline and single-terminal: no network, no auth, no API. The threat
 - **Single terminal.** One JSON state file, one writer. Multi-terminal needs per-terminal sequence partitions and a real transactional store (the `PosRepository` port is the seam).
 - **No printer integration.** The receipt is a monospace text block (same renderer in app and CLI); ESC/POS or thermal SDK integration is deliberately out of scope.
 - **No MyInvois e-invoice.** Malaysia's mandatory e-invoice rollout is the obvious next step: a `MyInvoisAdapter` behind the same repository seam, mapping `Receipt` → consolidated JSON with the LHDN tax-code split per rate group.
-- **Mobile builds not CI-proven.** The repo declares Android + iOS platforms, but CI has no Android SDK; the web release build is the CI proof of compilability. `flutter test` covers all logic. APK builds need Android SDK locally.
+- **Mobile builds CI-proven only on release.** Main-branch CI proves the web
+  release build; the `v*` tag release workflow builds the Android APK on
+  GitHub runners (which ship an Android SDK) and attaches it to the Release.
+  Local APK builds still need an Android SDK (`flutter doctor` will tell you).
 - SST rates/flags are simplified per-item (8% / 0%); real SST has scope nuances (service vs sales tax, registration thresholds) that a production system must model per business registration.
 
 ## License
