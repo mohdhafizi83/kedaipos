@@ -1,0 +1,44 @@
+name: Build
+
+# Manual artifact build: produces the same web zip + Android APK as the
+# release workflow, uploaded as Actions artifacts (not a GitHub Release).
+# Use when you need a testable build without cutting a version tag.
+
+on:
+  workflow_dispatch:
+
+# Third-party actions are pinned to full commit SHAs (supply-chain hygiene),
+# matching ci.yml and release.yml.
+
+jobs:
+  artifacts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: subosito/flutter-action@1bb71f5ac2761c1ca7c1a841d7a6090e7bf0cb74 # v2.9.0
+        with:
+          flutter-version: 3.47.7
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+
+      - name: Build web release (zip)
+        run: |
+          flutter build web --release
+          (cd build/web && zip -rq ../../kedaipos-web-latest.zip .)
+
+      - name: Build Android APK (release)
+        run: |
+          flutter build apk --release
+          cp build/app/outputs/flutter-apk/app-release.apk \
+            kedaipos-android-latest.apk
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: kedaipos-artifacts
+          path: |
+            kedaipos-web-latest.zip
+            kedaipos-android-latest.apk
+          if-no-files-found: error

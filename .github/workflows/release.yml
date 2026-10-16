@@ -1,0 +1,62 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+# Third-party actions are pinned to full commit SHAs (supply-chain hygiene),
+# matching ci.yml. Tag push v* -> build web release zip + Android APK and
+# attach both to the GitHub Release.
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: subosito/flutter-action@1bb71f5ac2761c1ca7c1a841d7a6090e7bf0cb74 # v2.9.0
+        with:
+          flutter-version: 3.47.7
+          channel: stable
+          cache: true
+
+      - name: Generate release notes from CHANGELOG
+        run: |
+          TAG=${GITHUB_REF_NAME}
+          VER=${GITHUB_REF_NAME#v}   # CHANGELOG guna [1.2.3] tanpa 'v'
+          if [ -f CHANGELOG.md ]; then
+            awk -v tag="$VER" -v tagv="$TAG" '
+              ($0 ~ "## \\[" tagv || $0 ~ "## \\[" tag) {found=1; next}
+              found && /^## \[/ {exit}
+              found {print}
+            ' CHANGELOG.md > release_notes.md
+            [ -s release_notes.md ] || echo "Release $TAG" > release_notes.md
+          else
+            echo "Release $TAG" > release_notes.md
+          fi
+
+      - run: flutter pub get
+
+      - name: Build web release (zip)
+        run: |
+          flutter build web --release
+          (cd build/web && zip -rq ../../kedaipos-web-${GITHUB_REF_NAME}.zip .)
+
+      - name: Build Android APK (release)
+        run: |
+          flutter build apk --release
+          cp build/app/outputs/flutter-apk/app-release.apk \
+            kedaipos-android-${GITHUB_REF_NAME}.apk
+
+      - name: Create GitHub Release with artifacts
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
+        with:
+          body_path: release_notes.md
+          generate_release_notes: true
+          files: |
+            kedaipos-web-${{ github.ref_name }}.zip
+            kedaipos-android-${{ github.ref_name }}.apk
